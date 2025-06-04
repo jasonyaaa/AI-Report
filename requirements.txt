@@ -1,0 +1,13 @@
+streamlit
+pandas
+numpy
+matplotlib
+requests
+textblob
+google-api-python-client
+newsapi-python
+pytube
+youtube-transcript-api
+plotly
+snownlp
+jieba
