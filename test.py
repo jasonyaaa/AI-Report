@@ -20,7 +20,7 @@ import jieba
 
 
 # 頁面設定
-st.set_page_config(page_title="新聞情感分析系統", page_icon="📰", layout="wide")
+st.set_page_config(page_title="新聞情感分析AI系統", page_icon="📰", layout="wide")
 
 # 取得新聞的函式
 def get_news(query, from_date, to_date, language='zh', sort_by='publishedAt'):
@@ -342,6 +342,19 @@ def visualize_sentiment(df, language):
         st.info("無可用文字生成詞雲。")
     # 新聞詞雲結束.
 
+def build_analysis_context(all_results):
+    context = ""
+    for source_type, df in all_results.items():
+        if not df.empty:
+            context += f"【{source_type}分析摘要】\n"
+            context += f"總數：{len(df)}\n"
+            context += f"正面：{sum(df['sentiment']=='正面')}\n"
+            context += f"中立：{sum(df['sentiment']=='中立')}\n"
+            context += f"負面：{sum(df['sentiment']=='負面')}\n"
+            context += f"平均極性：{df['polarity'].mean():.2f}\n"
+            context += f"平均主觀性：{df['subjectivity'].mean():.2f}\n"
+            context += "\n"
+    return context
 
 # 顯示分析結果的函式
 def display_results(df, source_type):
@@ -380,268 +393,177 @@ def display_results(df, source_type):
     st.write(f"連結：{most_negative.get('連結', '無')}")
 
 # 主介面
-st.title("📰 新聞情感分析系統")
+st.title("📰 新聞情感分析AI系統")
 st.markdown("""
 本系統可搜尋並分析網路上的新聞內容（包含文字與影片），顯示其情感傾向。
 """)
 
-# 側邊欄：API 設定與搜尋參數
+# --- 側邊欄 ---
 with st.sidebar:
     st.header("API 設定")
-    llm_api_key = st.text_input("LLM API 金鑰", type="password")  # 新增這一行
+    llm_api_key = st.text_input("LLM API 金鑰", type="password")
     news_api_key = st.text_input("NewsAPI 金鑰", type="password")
     youtube_api_key = st.text_input("YouTube API 金鑰", type="password")
-    
     st.header("搜尋設定")
     query = st.text_input("搜尋關鍵字（中英文皆可）")
-    
     col1, col2 = st.columns(2)
     with col1:
         days_ago = st.number_input("搜尋至幾天前的新聞", min_value=1, max_value=30, value=7)
     with col2:
         language = st.selectbox("語言", options=['zh', 'en'], index=0)
-    
     max_results = st.slider("最多顯示影片數量", min_value=5, max_value=50, value=10)
-    
     search_type = st.multiselect("搜尋類型", ['文字新聞', 'YouTube 影片'], default=['文字新聞'])
-    
     analyze_button = st.button("開始分析")
 
-# 顯示結果區域
+# --- 切換語言時自動清空分析結果 ---
+if "last_language" not in st.session_state:
+    st.session_state["last_language"] = language
+if language != st.session_state["last_language"]:
+    st.session_state["all_results"] = {}
+    st.session_state.messages = []
+    st.session_state["last_language"] = language
+
+# --- AI 助理小對話框 ---
+with st.expander("💬 AI 助理 (Gemini)"):
+    gemini_api_key = llm_api_key
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
+            st.chat_message("user").write(msg["content"])
+        else:
+            st.chat_message("assistant").write(msg["content"])
+    analysis_context = ""
+    if "all_results" in st.session_state:
+        analysis_context = build_analysis_context(st.session_state["all_results"])
+    user_input = st.chat_input("請輸入您的問題...")
+    if user_input and gemini_api_key:
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        prompt = f"以下是分析資料摘要：\n{analysis_context}\n\n使用者提問：{user_input}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_api_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            reply = data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            reply = f"API 請求失敗: {e}"
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+        st.rerun()
+
+# --- 分析流程（只做資料處理與存檔，不顯示） ---
 if analyze_button and query:
+    st.session_state["all_results"] = {}
+    st.session_state.messages = []
     all_results = {}
-    if not news_api_key and '文字新聞' in search_type:
-        st.error("請輸入 NewsAPI 金鑰以搜尋文字新聞")
-    
-    if not youtube_api_key and 'YouTube 影片' in search_type:
-        st.error("請輸入 YouTube API 金鑰以搜尋影片")
-    
-    if (news_api_key and '文字新聞' in search_type) or (youtube_api_key and 'YouTube 影片' in search_type):
-        with st.spinner("正在搜尋與分析，請稍候..."):
-            # 日期範圍
-            to_date = datetime.now().strftime('%Y-%m-%d')
-            from_date = (datetime.now() - timedelta(days=days_ago)).strftime('%Y-%m-%d')
-            
-            # 建立分頁
-            tabs = st.tabs([t for t in search_type] + ["總結", "AI 助理"])
-        
-            
-            # 處理文字新聞
-            if '文字新聞' in search_type and news_api_key:
-                with tabs[search_type.index('文字新聞')]:
-                    st.header("文字新聞情感分析")
-                    
-                    news_df = get_news(query, from_date, to_date, language)
-                    
-                    if not news_df.empty:
-                        sentiment_results = []
-                        for _, row in news_df.iterrows():
-                            text_to_analyze = f"{row['標題']} {row['描述']} {row['內容']}"
-                            sentiment_data = analyze_sentiment(text_to_analyze)
-                            sentiment_results.append(sentiment_data)
-                        
-                        news_df['polarity'] = [r['polarity'] for r in sentiment_results]
-                        news_df['subjectivity'] = [r['subjectivity'] for r in sentiment_results]
-                        news_df['sentiment'] = [r['sentiment'] for r in sentiment_results]
-                        
-                        display_results(news_df, "文字新聞")
-                        all_results['文字新聞'] = news_df
-                    else:
-                        st.warning("找不到任何新聞資料，請嘗試其他關鍵字或延長時間範圍。")
-            
-            # 處理 YouTube 影片
-            if 'YouTube 影片' in search_type and youtube_api_key:
-                with tabs[search_type.index('YouTube 影片')]:
-                    st.header("YouTube 影片留言情感分析")
-                    st.info("⚠️ 本功能分析的是影片下方的留言評論，不是字幕。")
+    to_date = datetime.now().strftime('%Y-%m-%d')
+    from_date = (datetime.now() - timedelta(days=days_ago)).strftime('%Y-%m-%d')
 
-                    videos_df = search_youtube_videos(query, language, max_results)
+    # 文字新聞
+    if '文字新聞' in search_type and news_api_key:
+        news_df = get_news(query, from_date, to_date, language)
+        if not news_df.empty:
+            sentiment_results = []
+            progress_bar = st.progress(0)
+            for i, (_, row) in enumerate(news_df.iterrows()):
+                text_to_analyze = f"{row['標題']} {row['描述']} {row['內容']}"
+                sentiment_data = analyze_sentiment(text_to_analyze)
+                sentiment_results.append(sentiment_data)
+                progress_bar.progress((i + 1) / len(news_df))
+            progress_bar.empty()
+            news_df['polarity'] = [r['polarity'] for r in sentiment_results]
+            news_df['subjectivity'] = [r['subjectivity'] for r in sentiment_results]
+            news_df['sentiment'] = [r['sentiment'] for r in sentiment_results]
+            all_results['文字新聞'] = news_df
 
-                    if not videos_df.empty:
-                        progress_bar = st.progress(0)
-                        progress_text = st.empty()
+    # YouTube 影片
+    if 'YouTube 影片' in search_type and youtube_api_key:
+        videos_df = search_youtube_videos(query, language, max_results)
+        if not videos_df.empty:
+            progress_bar = st.progress(0)
+            progress_text = st.empty()
+            all_comments = []
+            for i, (_, row) in enumerate(videos_df.iterrows()):
+                progress_text.text(f"正在分析第 {i+1} 部影片，共 {len(videos_df)} 部")
+                comments = get_youtube_comments(row['影片ID'], youtube_api_key, max_results=100)
+                for c in comments:
+                    c['影片標題'] = row['標題']
+                    c['影片發佈時間'] = row['發佈時間']
+                all_comments.extend(comments)
+                progress_bar.progress((i + 1) / len(videos_df))
+            progress_bar.empty()
+            progress_text.empty()
+            if all_comments:
+                comments_df = pd.DataFrame(all_comments)
+                # 先改欄位名稱
+                comments_df.rename(columns={'留言內容': '內容', '留言時間': '發佈時間'}, inplace=True)
+                sentiment_results = [analyze_sentiment(c) for c in comments_df['內容']]
+                comments_df['polarity'] = [r['polarity'] for r in sentiment_results]
+                comments_df['subjectivity'] = [r['subjectivity'] for r in sentiment_results]
+                comments_df['sentiment'] = [r['sentiment'] for r in sentiment_results]
+                all_results['YouTube 影片'] = comments_df
 
+    st.session_state["all_results"] = all_results
 
-
-                        all_comments = []
-                        for i, (_, row) in enumerate(videos_df.iterrows()):
-                            progress_text.text(f"正在分析第 {i+1} 部影片，共 {len(videos_df)} 部")
-                            comments = get_youtube_comments(row['影片ID'], youtube_api_key, max_results=100)
-                            for c in comments:
-                                c['影片標題'] = row['標題']
-                                c['影片發佈時間'] = row['發佈時間']
-                            all_comments.extend(comments)
-                            progress_bar.progress((i + 1) / len(videos_df))
-
-                        progress_bar.empty()
-                        progress_text.empty()
-
-                        if all_comments:
-                            comments_df = pd.DataFrame(all_comments)
-                            # 對每則留言做情感分析
-                            sentiment_results = [analyze_sentiment(c) for c in comments_df['留言內容']]
-                            comments_df['polarity'] = [r['polarity'] for r in sentiment_results]
-                            comments_df['subjectivity'] = [r['subjectivity'] for r in sentiment_results]
-                            comments_df['sentiment'] = [r['sentiment'] for r in sentiment_results]
-                            comments_df.rename(columns={'留言內容': '內容', '留言時間': '發佈時間'}, inplace=True)
-                            display_results(comments_df, "YouTube 留言")
-                            all_results['YouTube 影片'] = comments_df
-                        else:
-                            st.warning("找不到任何留言資料。")
-                        # <<< 這裡結束 >>>
-            
-            # 總結分頁
-            with tabs[-2]:
-                st.header("情感分析總結")
-                
-                if all_results:
-                    summary_data = []
-                    for source_type, df in all_results.items():
-                        if not df.empty:
-                            source_summary = {
-                                '類型': source_type,
-                                '總數': len(df),
-                                '正面': sum(df['sentiment'] == '正面'),
-                                '中立': sum(df['sentiment'] == '中立'),
-                                '負面': sum(df['sentiment'] == '負面'),
-                                '平均極性': df['polarity'].mean(),
-                                '平均主觀性': df['subjectivity'].mean()
-                            }
-                            summary_data.append(source_summary)
-                    
-                    if summary_data:
-                        summary_df = pd.DataFrame(summary_data)
-                        st.write("總結資料：")
-                        st.dataframe(summary_df)
-                        
-                        # 繪製總結長條圖
-                        fig = go.Figure()
-                        for source_type in summary_df['類型']:
-                            row = summary_df[summary_df['類型'] == source_type].iloc[0]
-                            fig.add_trace(go.Bar(
-                                name=source_type,
-                                x=['正面', '中立', '負面'],
-                                y=[row['正面'], row['中立'], row['負面']],
-                                marker_color=['green', 'blue', 'red']
-                            ))
-                        
-                        fig.update_layout(
-                            title='不同來源之情感分佈',
-                            xaxis_title='情感類別',
-                            yaxis_title='數量',
-                            barmode='group'
-                        )
-                        st.plotly_chart(fig)
-                        
-                        # 最終結論
-                        st.subheader("最終結論")
-                        
-                        total_positive = sum(row['正面'] for row in summary_data)
-                        total_neutral = sum(row['中立'] for row in summary_data)
-                        total_negative = sum(row['負面'] for row in summary_data)
-                        total_items = sum(row['總數'] for row in summary_data)
-                        
-                        st.write(f"總共分析 {total_items} 筆資料：")
-                        st.write(f"- {total_positive} ({total_positive/total_items*100:.1f}%) 為正面")
-                        st.write(f"- {total_neutral} ({total_neutral/total_items*100:.1f}%) 為中立")
-                        st.write(f"- {total_negative} ({total_negative/total_items*100:.1f}%) 為負面")
-                        
-                        if total_positive > (total_neutral + total_negative):
-                            st.write(f"**結論：** 關鍵字「{query}」整體呈現**正面**情感傾向。")
-                        elif total_negative > (total_neutral + total_positive):
-                            st.write(f"**結論：** 關鍵字「{query}」整體呈現**負面**情感傾向。")
-                        else:
-                            st.write(f"**結論：** 關鍵字「{query}」整體情感傾向**中立或混合**。")
-                else:
-                    st.warning("目前沒有任何資料可供總結分析。")
-            # AI 助理分頁
-            with tabs[-1]:
-                st.header("AI 助理")
-                st.markdown("你可以詢問本次分析的任何問題，AI 會根據分析結果回覆。")
-                user_question = st.text_area("請輸入你的問題", value="這次的關鍵詞情感分析結果你有甚麼看法？")
-                ask_button = st.button("送出問題", key="ask_llm")
-
-                if "llm_reply" not in st.session_state:
-                    st.session_state.llm_reply = ""
-
-                if ask_button and user_question and llm_api_key:
-                    # 彙整所有分析結果
-                    summary_text = ""
-                    for source_type, df in all_results.items():
-                        if not df.empty:
-                            summary_text += f"\n【{source_type}】\n"
-                            summary_text += df.head(10).to_markdown(index=False)
-                    prompt = f"以下是本次情感分析的資料摘要：\n{summary_text}\n\n使用者問題：{user_question}\n請用繁體中文簡要回覆。"
-
-                    headers = {
-                        "Authorization": f"Bearer {llm_api_key}",
-                        "Content-Type": "application/json"
-                    }
-                    data = {
-                        "model": "gpt-3.5-turbo",
-                        "messages": [
-                            {"role": "system", "content": "你是一個新聞情感分析助理，請根據資料摘要回答問題。"},
-                            {"role": "user", "content": prompt}
-                        ]
-                    }
-                    try:
-                        response = requests.post(
-                            "https://api.openai.com/v1/chat/completions",
-                            headers=headers,
-                            json=data,
-                            timeout=60
-                        )
-                        if response.status_code == 200:
-                            ai_reply = response.json()["choices"][0]["message"]["content"]
-                            st.session_state.llm_reply = ai_reply
-                        else:
-                            st.session_state.llm_reply = f"AI 回應失敗，狀態碼：{response.status_code}\n{response.text}"
-                    except Exception as e:
-                        st.session_state.llm_reply = f"AI 助理呼叫失敗：{e}"
-
-                elif ask_button and not llm_api_key:
-                    st.warning("請先輸入 LLM API 金鑰")
-
-                # 顯示 LLM 回應
-                if st.session_state.llm_reply:
-                    st.success("AI 助理回覆：")
-                    st.write(st.session_state.llm_reply)
-        
-        # 提供下載功能
-        if all_results:
-            st.subheader("下載分析結果")
-            for source_type, df in all_results.items():
-                if not df.empty:
-                    csv = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label=f"下載 {source_type} 結果 (CSV)",
-                        data=csv,
-                        file_name=f"分析結果_{source_type.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-
+# --- 顯示流程（唯一一份，顯示分頁、圖表、下載） ---
+if "all_results" in st.session_state and st.session_state["all_results"]:
+    all_results = st.session_state["all_results"]
+    tabs = st.tabs([t for t in all_results.keys()] + ["總結"])
+    for idx, (source_type, df) in enumerate(all_results.items()):
+        with tabs[idx]:
+            display_results(df, source_type)
+    with tabs[-1]:
+        st.header("情感分析總結")
+        summary_data = []
+        for source_type, df in all_results.items():
+            if not df.empty:
+                source_summary = {
+                    '類型': source_type,
+                    '總數': len(df),
+                    '正面': sum(df['sentiment'] == '正面'),
+                    '中立': sum(df['sentiment'] == '中立'),
+                    '負面': sum(df['sentiment'] == '負面'),
+                    '平均極性': df['polarity'].mean(),
+                    '平均主觀性': df['subjectivity'].mean()
+                }
+                summary_data.append(source_summary)
+        if summary_data:
+            summary_df = pd.DataFrame(summary_data)
+            st.write("總結資料：")
+            st.dataframe(summary_df)
+            # ...（你的長條圖、結論等照原本放這裡）...
+        else:
+            st.warning("目前沒有任何資料可供總結分析。")
+    # 下載功能
+    st.subheader("下載分析結果")
+    for source_type, df in all_results.items():
+        if not df.empty:
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"下載 {source_type} 結果 (CSV)",
+                data=csv,
+                file_name=f"分析結果_{source_type.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
 else:
     st.info("請輸入搜尋關鍵字並點擊「開始分析」以啟動系統。")
-    
     with st.expander("使用說明"):
         st.markdown("""
         ### 如何使用此系統
-        
         1. **API 設定**  
            - 取得 [NewsAPI](https://newsapi.org) 的 API Key，以及在 Google Cloud Console 啟用 YouTube Data API 後取得 API Key  
            - 將金鑰分別貼到側邊欄的「NewsAPI 金鑰」與「YouTube API 金鑰」欄位
-        
         2. **搜尋設定**  
            - 輸入欲搜尋的關鍵字（可同時使用中文與英文）  
            - 選擇要抓取多少天內的新聞  
            - 選擇語言（中文 or 英文）  
            - 選擇要分析的類型（文字新聞、YouTube 影片，或兩者）
-        
         3. **查看結果**  
            - 觀察情感分佈（正面、中立、負面）  
            - 查看不同來源的情感分析  
            - 查看情感趨勢圖與最極端的正/負向項目
-        
         **範例關鍵字：**  
         - 政治 (Politics)  
         - 經濟 (Economy)  
@@ -652,4 +574,4 @@ else:
         
 # 頁面底部
 st.markdown("---")
-st.markdown("© 2025 新聞情感分析系統 | 使用 Streamlit、NewsAPI 和 YouTube API 開發")
+st.markdown("© 2025 新聞情感分析AI系統 | 使用 Streamlit、NewsAPI 和 YouTube API 開發")
