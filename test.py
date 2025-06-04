@@ -19,7 +19,6 @@ from snownlp import SnowNLP
 import jieba
 
 
-
 # 頁面設定
 st.set_page_config(page_title="新聞情感分析系統", page_icon="📰", layout="wide")
 
