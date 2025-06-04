@@ -412,7 +412,7 @@ with st.sidebar:
     with col2:
         language = st.selectbox("語言", options=['zh', 'en'], index=0)
     max_results = st.slider("最多顯示影片數量", min_value=5, max_value=50, value=10)
-    search_type = st.multiselect("搜尋類型", ['文字新聞', 'YouTube 影片'], default=['文字新聞'])
+    search_type = st.multiselect("搜尋類型", ['文字新聞', 'YouTube 影片評論'], default=['文字新聞'])
     analyze_button = st.button("開始分析")
 
 # --- 切換語言時自動清空分析結果 ---
@@ -503,7 +503,7 @@ if analyze_button and query:
                 comments_df['polarity'] = [r['polarity'] for r in sentiment_results]
                 comments_df['subjectivity'] = [r['subjectivity'] for r in sentiment_results]
                 comments_df['sentiment'] = [r['sentiment'] for r in sentiment_results]
-                all_results['YouTube 影片'] = comments_df
+                all_results['YouTube 影片評論'] = comments_df
 
     st.session_state["all_results"] = all_results
 
@@ -551,27 +551,102 @@ else:
     st.info("請輸入搜尋關鍵字並點擊「開始分析」以啟動系統。")
     with st.expander("使用說明"):
         st.markdown("""
-        ### 如何使用此系統
-        1. **API 設定**  
-           - 取得 [NewsAPI](https://newsapi.org) 的 API Key，以及在 Google Cloud Console 啟用 YouTube Data API 後取得 API Key  
-           - 將金鑰分別貼到側邊欄的「NewsAPI 金鑰」與「YouTube API 金鑰」欄位
-        2. **搜尋設定**  
-           - 輸入欲搜尋的關鍵字（可同時使用中文與英文）  
-           - 選擇要抓取多少天內的新聞  
-           - 選擇語言（中文 or 英文）  
-           - 選擇要分析的類型（文字新聞、YouTube 影片，或兩者）
-        3. **查看結果**  
-           - 觀察情感分佈（正面、中立、負面）  
-           - 查看不同來源的情感分析  
-           - 查看情感趨勢圖與最極端的正/負向項目
-        **範例關鍵字：**  
-        - 政治 (Politics)  
-        - 經濟 (Economy)  
-        - 科技 (Technology)  
-        - 健康 (Health)  
-        - 環保 (Environment)  
-        """)
+            ### 🧠 如何使用「新聞情感分析 AI 系統」
+
+            這是一套整合新聞、YouTube 留言、情感分析與 AI 助理的互動式系統，幫助你快速掌握熱門話題的公眾情緒傾向。
+
+            ---
+
+            #### 🔐 1. API 設定（必填才能使用）
+
+            請先準備以下三組金鑰，並輸入於左側邊欄：
+
+            - **NewsAPI 金鑰**：用來搜尋新聞內容（[註冊 NewsAPI](https://newsapi.org) 並取得 API Key）。
+            - **YouTube API 金鑰**：用來搜尋 YouTube 影片並擷取留言（請到 [Google Cloud Console](https://console.cloud.google.com/) 建立專案並啟用 YouTube Data API）。
+            - **LLM（AI 助理）API 金鑰**：可選。支援 Gemini AI 助理互動功能。請填入 Google Gemini 的 API 金鑰（如使用 OpenAI 可自行改程式支援）。
+
+            ⚠️ **請妥善保存金鑰，避免洩漏或誤用。**
+
+            ---
+
+            #### 🔍 2. 搜尋設定（在左邊欄調整）
+
+            - **搜尋關鍵字**：輸入想要分析的主題詞（可使用中文或英文）。
+            - **搜尋天數**：系統會從今天往前計算，例如輸入「7」即代表搜尋最近 7 天的新聞/影片。
+            - **語言選擇**：
+            - `zh`：以中文搜尋新聞與影片，並進行中文情感分析。
+            - `en`：以英文搜尋新聞與影片，並進行情感分析。
+            - **最多顯示影片數量**：從 5 到 50 部影片之間調整。
+            - **搜尋類型（可多選）**：
+            - `文字新聞`：從新聞網站抓取文章資料。
+            - `YouTube 影片`：抓取影片留言進行情感分析。
+
+            設定完成後，請點擊 **「開始分析」** 按鈕，系統將開始運作。
+
+            ---
+
+            #### 🤖 3. AI 助理功能（Gemini）
+
+            你可以打開下方的 **「💬 AI 助理 (Gemini)」** 對話框：
+
+            - 啟用條件：已輸入 LLM API 金鑰。
+            - 功能：AI 助理會根據你輸入的問題與分析結果，使用 Google Gemini 回覆建議與解釋。
+            - 範例問題：
+            - 「這次的關鍵字情感偏向如何？」
+            - 「哪個來源的負面情緒最多？」
+            - 「請幫我摘要這次分析重點。」
+
+            ---
+
+            #### 📊 4. 查看分析結果
+
+            每個資料來源（文字新聞或影片）都會有獨立分頁，顯示：
+
+            - **情感統計**：
+            - 正面 / 中立 / 負面 數量
+            - 情感極性指數與主觀性平均值
+            - **可視化圖表**：
+            - 圓餅圖：情感比例分佈
+            - 長條圖：不同來源的情緒比對
+            - 折線圖：隨時間的情緒變化趨勢
+            - **文字雲（詞雲圖）**：
+            - 直觀展示重要關鍵字
+            - **極端情緒樣本**：
+            - 正面與負面情緒最強的文章或留言內容與連結
+
+            ---
+
+            #### 📥 5. 資料總結與下載
+
+            - 系統會自動整合總結表格（各來源的情緒統計），並可供 CSV 下載。
+            - 每個資料來源（新聞或影片）都可分別匯出分析結果（含標題、來源、情感標註等）。
+
+            ---
+
+            #### 🧪 6. 範例關鍵字建議（中文 / 英文皆可）
+
+            以下為你可以試用的熱門主題關鍵字：
+
+            - 政治 (Politics)  
+            - 經濟 (Economy)  
+            - AI 技術 (Artificial Intelligence)  
+            - 環保 (Environment)  
+            - 健康 (Health)  
+            - 教育 (Education)  
+            - 電動車 (Electric Vehicle)  
+            - ChatGPT、Gemini、OpenAI  
+
+            ---
+
+            #### 💡 提醒事項
+
+            - 若系統顯示「無資料」，可能是：
+            - 關鍵字過冷門，沒有新聞或影片。
+            - API 金鑰未填或次數限制已達上限。
+            - 建議選擇較熱門或時事性的主題詞作為關鍵字。
+
+            """)
         
 # 頁面底部
 st.markdown("---")
-st.markdown("© 2025 新聞情感分析AI系統 | 使用 Streamlit、NewsAPI 和 YouTube API 開發")
+st.markdown("© 2025 新聞情感分析 AI 系統 — 使用 Streamlit、NewsAPI、YouTube API、Gemini AI 開發。")
