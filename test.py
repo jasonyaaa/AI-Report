@@ -308,10 +308,11 @@ def visualize_sentiment(df, language):
 
     # 4.2 如果有 text_corpus，繪製詞雲
     if text_corpus:
+        #st.write(f"DEBUG: text_corpus 長度={len(text_corpus)}")
+        #st.write(f"DEBUG: 前100字={text_corpus[:100]}")
         st.subheader("文字詞雲展示")
-
         if language == 'zh':
-            font_path = "NotoSansTC-VariableFont_wght.ttf"  # 或 "fonts/NotoSansTC-VariableFont_wght.ttf"
+            font_path = "NotoSansTC-Regular.ttf"
             tokens = " ".join(jieba.cut(text_corpus))
             wc = WordCloud(
                 font_path=font_path,
@@ -322,6 +323,16 @@ def visualize_sentiment(df, language):
                 stopwords=None,
                 collocations=False
             ).generate(tokens)
+        else:
+            # 英文不需要指定 font_path
+            wc = WordCloud(
+                width=800,
+                height=400,
+                background_color='white',
+                max_words=100,
+                stopwords=None,
+                collocations=False
+            ).generate(text_corpus)
 
         fig_wc, ax_wc = plt.subplots(figsize=(10, 5))
         ax_wc.imshow(wc, interpolation='bilinear')
