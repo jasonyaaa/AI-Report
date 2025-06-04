@@ -311,27 +311,36 @@ def visualize_sentiment(df, language):
         st.subheader("文字詞雲展示")
 
         if language == 'zh':
-            # 只剩中文才用 jieba 分詞
-            tokens = " ".join(jieba.cut(text_corpus))
-            wc = WordCloud(
-                font_path="/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                width=800,
-                height=400,
-                background_color='white',
-                max_words=100,
-                stopwords=None,       # 如要加中文停用詞，在此傳入集合
-                collocations=False
-            ).generate(tokens)
-        else:
-            # 英文直接用原始文字
-            wc = WordCloud(
-                width=800,
-                height=400,
-                background_color='white',
-                max_words=100,
-                stopwords=None,       # 如要加英文停用詞，可傳 EN_STOPWORDS
-                collocations=False
-            ).generate(text_corpus)
+                # 嘗試自動尋找中文字型
+                font_paths = [
+                    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                    "/usr/share/fonts/truetype/noto/NotoSansCJK-TC-Regular.otf",
+                    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                    "/usr/share/fonts/truetype/arphic/ukai.ttc",
+                    "/usr/share/fonts/truetype/arphic/uming.ttc"
+                ]
+                font_path = None
+                for fp in font_paths:
+                    try:
+                        with open(fp, "rb"):
+                            font_path = fp
+                            break
+                    except Exception:
+                        continue
+                if not font_path:
+                    st.error("找不到中文字型，無法產生中文詞雲。請聯絡管理員安裝中文字型。")
+                    return
+
+                tokens = " ".join(jieba.cut(text_corpus))
+                wc = WordCloud(
+                    font_path=font_path,
+                    width=800,
+                    height=400,
+                    background_color='white',
+                    max_words=100,
+                    stopwords=None,
+                    collocations=False
+                ).generate(tokens)
 
         fig_wc, ax_wc = plt.subplots(figsize=(10, 5))
         ax_wc.imshow(wc, interpolation='bilinear')
