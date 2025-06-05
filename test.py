@@ -412,7 +412,7 @@ with st.sidebar:
     with col2:
         language = st.selectbox("語言", options=['zh', 'en'], index=0)
     max_results = st.slider("最多顯示影片數量", min_value=5, max_value=50, value=10)
-    search_type = st.multiselect("搜尋類型", ['文字新聞', 'YouTube 影片評論'], default=['文字新聞'])
+    search_type = st.multiselect("搜尋類型", ['文字新聞', 'YouTube 影片'], default=['文字新聞'])
     analyze_button = st.button("開始分析")
 
 # --- 切換語言時自動清空分析結果 ---
@@ -503,7 +503,7 @@ if analyze_button and query:
                 comments_df['polarity'] = [r['polarity'] for r in sentiment_results]
                 comments_df['subjectivity'] = [r['subjectivity'] for r in sentiment_results]
                 comments_df['sentiment'] = [r['sentiment'] for r in sentiment_results]
-                all_results['YouTube 影片評論'] = comments_df
+                all_results['YouTube 影片'] = comments_df
 
     st.session_state["all_results"] = all_results
 
