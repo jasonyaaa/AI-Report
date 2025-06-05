@@ -14,10 +14,10 @@ from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 import plotly.express as px
 import plotly.graph_objects as go
-from wordcloud import WordCloud
+from wordcloud import WordCloud, STOPWORDS
 from snownlp import SnowNLP
 import jieba
-
+from opencc import OpenCC
 
 # 頁面設定
 st.set_page_config(page_title="新聞情感分析AI系統", page_icon="📰", layout="wide")
@@ -308,29 +308,40 @@ def visualize_sentiment(df, language):
 
     # 4.2 如果有 text_corpus，繪製詞雲
     if text_corpus:
-        #st.write(f"DEBUG: text_corpus 長度={len(text_corpus)}")
-        #st.write(f"DEBUG: 前100字={text_corpus[:100]}")
         st.subheader("文字詞雲展示")
-        if language == 'zh':
-            font_path = "NotoSansTC-Regular.ttf"
-            tokens = " ".join(jieba.cut(text_corpus))
-            wc = WordCloud(
-                font_path=font_path,
-                width=800,
-                height=400,
-                background_color='white',
-                max_words=100,
-                stopwords=None,
-                collocations=False
-            ).generate(tokens)
+        # ==== 擴充停用詞 ====
+        custom_stopwords = set()  # 先給預設值，避免未定義
+        if text_corpus:
+            st.subheader("文字詞雲展示")
+            custom_stopwords = set()
+            if language == 'zh':
+                custom_stopwords = set([
+                    # ...你的停用詞...
+                ])
+                font_path = "NotoSansTC-Regular.ttf"
+                tokens = " ".join(jieba.cut(text_corpus))
+                # 轉換簡體為繁體
+                cc = OpenCC('s2t')
+                tokens_trad = cc.convert(tokens)
+                wc = WordCloud(
+                    font_path=font_path,
+                    width=800,
+                    height=400,
+                    background_color='white',
+                    max_words=100,
+                    stopwords=custom_stopwords,
+                    collocations=False
+                ).generate(tokens_trad)
         else:
-            # 英文不需要指定 font_path
+            custom_stopwords = STOPWORDS.union({
+                "the", "a", "an", "and", "or", "but", "if", "then", "so", "because", "as", "of", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "can", "will", "just", "don", "should", "now", "what", "who", "which", "whose", "whom", "this", "that", "these", "those", "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having", "do", "does", "did", "doing", "would", "could", "should", "might", "must", "may", "shall", "let", "lets"
+            })
             wc = WordCloud(
                 width=800,
                 height=400,
                 background_color='white',
                 max_words=100,
-                stopwords=None,
+                stopwords=custom_stopwords,
                 collocations=False
             ).generate(text_corpus)
 
