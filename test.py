@@ -309,29 +309,23 @@ def visualize_sentiment(df, language):
     # 4.2 如果有 text_corpus，繪製詞雲
     if text_corpus:
         st.subheader("文字詞雲展示")
-        # ==== 擴充停用詞 ====
-        custom_stopwords = set()  # 先給預設值，避免未定義
-        if text_corpus:
-            st.subheader("文字詞雲展示")
-            custom_stopwords = set()
-            if language == 'zh':
-                custom_stopwords = set([
-                    # ...你的停用詞...
-                ])
-                font_path = "NotoSansTC-Regular.ttf"
-                tokens = " ".join(jieba.cut(text_corpus))
-                # 轉換簡體為繁體
-                cc = OpenCC('s2t')
-                tokens_trad = cc.convert(tokens)
-                wc = WordCloud(
-                    font_path=font_path,
-                    width=800,
-                    height=400,
-                    background_color='white',
-                    max_words=100,
-                    stopwords=custom_stopwords,
-                    collocations=False
-                ).generate(tokens_trad)
+        if language == 'zh':
+            custom_stopwords = set([
+                # ...你的停用詞...
+            ])
+            font_path = "NotoSansTC-Regular.ttf"
+            tokens = " ".join(jieba.cut(text_corpus))
+            cc = OpenCC('s2t')
+            tokens_trad = cc.convert(tokens)
+            wc = WordCloud(
+                font_path=font_path,
+                width=800,
+                height=400,
+                background_color='white',
+                max_words=100,
+                stopwords=custom_stopwords,
+                collocations=False
+            ).generate(tokens_trad)
         else:
             custom_stopwords = STOPWORDS.union({
                 "the", "a", "an", "and", "or", "but", "if", "then", "so", "because", "as", "of", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "can", "will", "just", "don", "should", "now", "what", "who", "which", "whose", "whom", "this", "that", "these", "those", "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having", "do", "does", "did", "doing", "would", "could", "should", "might", "must", "may", "shall", "let", "lets"
